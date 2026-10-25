@@ -2,7 +2,7 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <title>키움증권 실시간 조건검색 모니터링</title>
+    <title>키움증권 실시간 조건검색 및 시세 모니터링</title>
     <style>
       body {
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
@@ -35,7 +35,13 @@
       .config-box button:hover {
         background: #0056b3;
       }
+
       .container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .row-group {
         display: flex;
         gap: 20px;
       }
@@ -46,6 +52,7 @@
         border-radius: 8px;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
       }
+
       table {
         width: 100%;
         border-collapse: collapse;
@@ -56,21 +63,22 @@
         border: 1px solid #ddd;
         padding: 8px;
         text-align: center;
-        font-size: 14px;
+        font-size: 13px;
       }
       th {
         background-color: #007bff;
         color: white;
       }
+
       .log-box {
         background: #1e1e1e;
         color: #00ff00;
         padding: 15px;
         border-radius: 5px;
-        height: 300px;
+        height: 200px;
         overflow-y: auto;
         font-family: monospace;
-        font-size: 13px;
+        font-size: 12px;
       }
       .tag-i {
         color: #28a745;
@@ -80,42 +88,84 @@
         color: #dc3545;
         font-weight: bold;
       }
+      .price-up {
+        color: #dc3545;
+        font-weight: bold;
+      } /* 상승 (빨간색) */
+      .price-down {
+        color: #28a745;
+        font-weight: bold;
+      } /* 하락 (파란색) */
     </style>
   </head>
   <body>
-    <h2>📈 키움증권 실시간 조건검색 및 체결 모니터링 (Browser 단독 실행)</h2>
+    <h2>📈 키움증권 실시간 조건검색 및 체결(0A) 모니터링</h2>
 
     <!-- 설정 입력 패널 -->
     <div class="config-box">
       <label
-        >AppKey: <input type="text" id="appkey" value="AxserEsdcredca....."
+        >AppKey:
+        <input
+          type="text"
+          id="appkey"
+          value="HW3dPr6BAP0Kh6prpIRHXBposlxy9YH2Wt2zedhY3Zk"
       /></label>
       <label
         >SecretKey:
-        <input type="text" id="secretkey" value="SEefdcwcforehDre2fdvc...."
+        <input
+          type="text"
+          id="secretkey"
+          value="J3L6jNLuKViIARgiUXwhdmOY8fR5ILMgpkEqYL-ndVw"
       /></label>
       <button onclick="startMonitoring()">연동 시작</button>
     </div>
 
     <div class="container">
-      <!-- 조건검색 감지 내역 패널 -->
-      <div class="panel">
-        <h3>조건검색 포착 현황</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>종목코드</th>
-              <th>구분</th>
-              <th>시간</th>
-            </tr>
-          </thead>
-          <tbody id="conditionTable">
-            <!-- 동적 추가 -->
-          </tbody>
-        </table>
+      <!-- 상단: 조건검색 포착 현황 & 실시간 시세 모니터링 -->
+      <div class="row-group">
+        <!-- 조건검색 감지 내역 -->
+        <div class="panel" style="flex: 1">
+          <h3>조건검색 포착 현황</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>종목코드</th>
+                <th>구분</th>
+                <th>시간</th>
+              </tr>
+            </thead>
+            <tbody id="conditionTable"></tbody>
+          </table>
+        </div>
+
+        <!-- 실시간 시세 (0A) 모니터링 테이블 -->
+        <div class="panel" style="flex: 2">
+          <h3>실시간 시세 현황 (0A)</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>종목코드</th>
+                <th>현재가</th>
+                <th>전일대비</th>
+                <th>등락률</th>
+                <th>누적거래량</th>
+                <th>시가</th>
+                <th>고가</th>
+                <th>저가</th>
+              </tr>
+            </thead>
+            <tbody id="stockTable">
+              <tr>
+                <td colspan="8" style="color: #888">
+                  등록된 실시간 시세가 없습니다.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <!-- 실시간 시스템 로그 패널 -->
+      <!-- 하단: 시스템 로그 -->
       <div class="panel">
         <h3>실시간 로그</h3>
         <div id="logBox" class="log-box">
@@ -125,196 +175,220 @@
     </div>
 
     <script>
-      // 설정 정보 (실전투자 기준)
-      const HOST = "https://api.kiwoom.com";
-      const SOCKET_URL = "wss://api.kiwoom.com:10000/api/websocket";
+      const HOST = 'https://mockapi.kiwoom.com';
+      const SOCKET_URL = 'wss://mockapi.kiwoom.com:10000/api/websocket';
 
-      const logBox = document.getElementById("logBox");
-      const conditionTable = document.getElementById("conditionTable");
+      const logBox = document.getElementById('logBox');
+      const conditionTable = document.getElementById('conditionTable');
+      const stockTable = document.getElementById('stockTable');
+
+      // 실시간 시세 데이터를 담아둘 맵 (종목코드를 키로 사용)
+      const stockDataMap = new Map();
 
       function appendLog(text) {
-        logBox.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${text}</div>`;
-        logBox.scrollTop = logBox.scrollHeight;
+          logBox.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${text}</div>`;
+          logBox.scrollTop = logBox.scrollHeight;
       }
 
-      // 1. 접근토큰 발급 함수
+      // 1. 접근토큰 발급
       async function getAccessToken(appkey, secretkey) {
-        const url = `${HOST}/oauth2/token`;
-        const headers = {
-          "Content-Type": "application/json;charset=UTF-8",
-        };
-        const body = {
-          grant_type: "client_credentials",
-          appkey: appkey,
-          secretkey: secretkey,
-        };
-
-        try {
-          appendLog("접근토큰을 요청 중입니다...");
+          const url = `${HOST}/oauth2/token`;
           const response = await fetch(url, {
-            method: "POST",
-            headers: headers,
-            body: JSON.stringify(body),
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+              body: JSON.stringify({ 'grant_type': 'client_credentials', 'appkey', 'secretkey' })
           });
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          const responseBody = await response.json();
-          const accessToken = responseBody.access_token || responseBody.token;
-
-          if (!accessToken) {
-            throw new Error("Access Token을 찾을 수 없습니다.");
-          }
-
-          appendLog("접근토큰 발급 성공!");
-          return accessToken;
-        } catch (error) {
-          appendLog(`접근토큰 발급 실패: ${error.message}`);
-          throw error;
-        }
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          const data = await response.json();
+          return data.access_token || data.token;
       }
 
-      // 2. WebSocket 클라이언트 클래스
+      // 2. WebSocket 클라이언트
       class BrowserWebSocketClient {
-        constructor(uri, accessToken) {
-          this.uri = uri;
-          this.accessToken = accessToken;
-          this.websocket = null;
-          this.connected = false;
-          this.registeredStocks = new Set();
-        }
-
-        connect() {
-          return new Promise((resolve, reject) => {
-            this.websocket = new WebSocket(this.uri);
-
-            this.websocket.onopen = () => {
-              this.connected = true;
-              appendLog("웹소켓 서버와 연결되었습니다.");
-
-              // 로그인 패킷 전송
-              const loginPacket = {
-                trnm: "LOGIN",
-                token: this.accessToken,
-              };
-              appendLog("실시간 시세 서버로 로그인 패킷을 전송합니다.");
-              this.sendMessage(loginPacket);
-              resolve();
-            };
-
-            this.websocket.onerror = (error) => {
-              appendLog(`WebSocket 에러 발생`);
-              reject(error);
-            };
-
-            this.websocket.onclose = () => {
-              appendLog("WebSocket 연결이 종료되었습니다.");
+          constructor(uri, accessToken) {
+              this.uri = uri;
+              this.accessToken = accessToken;
+              this.websocket = null;
               this.connected = false;
-            };
+              this.registeredStocks = new Set();
+          }
 
-            this.websocket.onmessage = (event) => {
-              const response = JSON.parse(event.data);
+          connect() {
+              return new Promise((resolve, reject) => {
+                  this.websocket = new WebSocket(this.uri);
 
-              if (response.trnm === "LOGIN") {
-                if (response.return_code !== 0) {
-                  appendLog(`로그인 실패: ${response.return_msg}`);
-                  this.disconnect();
-                } else {
-                  appendLog("웹소켓 로그인 성공하였습니다.");
-                  this.requestConditionSearch();
-                }
-              } else if (response.trnm === "PING") {
-                this.sendMessage(response);
-              } else if (response.trnm === "REAL") {
-                this.handleRealConditionResponse(response);
-              } else {
-                if (response.trnm !== "PING") {
-                  console.log("실시간 시세 응답 수신:", response);
-                }
+                  this.websocket.onopen = () => {
+                      this.connected = true;
+                      appendLog('웹소켓 서버와 연결되었습니다.');
+                      this.sendMessage({ trnm: 'LOGIN', token: this.accessToken });
+                      resolve();
+                  };
+
+                  this.websocket.onerror = (error) => {
+                      appendLog(`WebSocket 에러 발생`);
+                      reject(error);
+                  };
+
+                  this.websocket.onclose = () => {
+                      appendLog('WebSocket 연결이 종료되었습니다.');
+                      this.connected = false;
+                  };
+
+                  this.websocket.onmessage = (event) => {
+                      const response = JSON.parse(event.data);
+
+                      if (response.trnm === 'LOGIN') {
+                          if (response.return_code !== 0) {
+                              appendLog(`로그인 실패: ${response.return_msg}`);
+                              this.disconnect();
+                          } else {
+                              appendLog('웹소켓 로그인 성공하였습니다.');
+                              this.requestConditionSearch();
+                          }
+                      }
+                      else if (response.trnm === 'PING') {
+                          this.sendMessage(response);
+                      }
+                      else if (response.trnm === 'REAL') {
+                          // 조건검색 실시간 이벤트인지, 0A 실시간 시세인지 분기 처리
+                          this.handleRealResponse(response);
+                      }
+                  };
+              });
+          }
+
+          requestConditionSearch() {
+              appendLog('조건검색 요청 패킷을 전송합니다.');
+              this.sendMessage({ 'trnm': 'CNSRREQ', 'seq': '1', 'search_type': '1', 'stex_tp': 'K' });
+          }
+
+          handleRealResponse(response) {
+              // 키움 실시간 응답 구조(data 리스트) 순회
+              const dataList = response.data || [response];
+
+              dataList.forEach(itemObj => {
+                  const type = itemObj.type;
+                  const stkCd = itemObj.item;
+                  const values = itemObj.values;
+
+                  // 1) 조건검색 실시간 데이터 처리 (TR명 혹은 필드 내 구분값이 있는 경우)
+                  if (itemObj.name === '조건검색실시간' || values?.['20'] || values?.['843']) {
+                      const code = stkCd || values?.['843'];
+                      const insDelTp = values?.['20'] || itemObj.ins_del_tp;
+
+                      if (code && insDelTp) {
+                          this.processConditionEvent(code, insDelTp);
+                      }
+                  }
+
+                  // 2) 주식체결 실시간 (0A) 데이터 처리
+                  if (type === '0A' && values) {
+                      this.processStockTick(stkCd, values);
+                  }
+              });
+          }
+
+          processConditionEvent(stkCd, insDelTp) {
+              // 조건검색 테이블에 추가
+              if (conditionTable.rows.length === 1 && conditionTable.rows[0].cells.length === 1) {
+                  conditionTable.innerHTML = '';
               }
-            };
-          });
-        }
+              const row = conditionTable.insertRow(0);
+              const typeText = insDelTp === 'I' ? '<span class="tag-i">편입 (I)</span>' : '<span class="tag-d">이탈 (D)</span>';
+              row.innerHTML = `<td><b>${stkCd}</b></td><td>${typeText}</td><td>${new Date().toLocaleTimeString()}</td>`;
+              appendLog(`[조건검색 감지] 종목: ${stkCd}, 구분: ${insDelTp}`);
 
-        requestConditionSearch() {
-          appendLog("조건검색 요청 패킷을 전송합니다.");
-          this.sendMessage({
-            trnm: "CNSRREQ",
-            seq: "1",
-            search_type: "1",
-            stex_tp: "K",
-          });
-        }
-
-        handleRealConditionResponse(response) {
-          const stkCd = response.stk_cd || response.values?.["843"];
-          const insDelTp = response.ins_del_tp || response.values?.["20"];
-
-          if (!stkCd) return;
-
-          // 화면 테이블에 추가
-          const row = conditionTable.insertRow(0);
-          const typeText =
-            insDelTp === "I"
-              ? '<span class="tag-i">편입 (I)</span>'
-              : '<span class="tag-d">이탈 (D)</span>';
-          row.innerHTML = `<td><b>${stkCd}</b></td><td>${typeText}</td><td>${new Date().toLocaleTimeString()}</td>`;
-          appendLog(`[조건검색 감지] 종목: ${stkCd}, 구분: ${insDelTp}`);
-
-          if (insDelTp === "I" && !this.registeredStocks.has(stkCd)) {
-            this.registeredStocks.add(stkCd);
-            this.sendMessage({
-              trnm: "REG",
-              grp_no: "1",
-              refresh: "0",
-              data: [{ item: [stkCd], type: ["0A"] }],
-            });
-          } else if (insDelTp === "D" && this.registeredStocks.has(stkCd)) {
-            this.registeredStocks.delete(stkCd);
-            this.sendMessage({
-              trnm: "UNREG",
-              grp_no: "1",
-              data: [{ item: [stkCd], type: ["0A"] }],
-            });
+              if (insDelTp === 'I' && !this.registeredStocks.has(stkCd)) {
+                  this.registeredStocks.add(stkCd);
+                  // 0A 실시간 시세 등록 요청
+                  this.sendMessage({
+                      'trnm': 'REG',
+                      'grp_no': '1',
+                      'refresh': '0',
+                      'data': [{ 'item': [stkCd], 'type': ['0A'] }]
+                  });
+                  appendLog(`[실시간등록 요청] 종목: ${stkCd} (0A)`);
+              } else if (insDelTp === 'D' && this.registeredStocks.has(stkCd)) {
+                  this.registeredStocks.delete(stkCd);
+                  this.sendMessage({
+                      'trnm': 'UNREG',
+                      'grp_no': '1',
+                      'data': [{ 'item': [stkCd], 'type': ['0A'] }]
+                  });
+                  appendLog(`[실시간해제 요청] 종목: ${stkCd} (0A)`);
+              }
           }
-        }
 
-        sendMessage(message) {
-          if (this.connected && this.websocket) {
-            this.websocket.send(JSON.stringify(message));
-          }
-        }
+          processStockTick(stkCd, values) {
+              // 0A 필드 매핑
+              // 10: 현재가, 11: 전일대비, 12: 등락율, 13: 누적거래량, 16: 시가, 17: 고가, 18: 저가
+              const tickData = {
+                  stkCd: stkCd,
+                  currentPrice: values['10'] || '-',
+                  priceChange: values['11'] || '-',
+                  changeRate: values['12'] || '0.00',
+                  volume: values['13'] || '-',
+                  open: values['16'] || '-',
+                  high: values['17'] || '-',
+                  low: values['18'] || '-'
+              };
 
-        disconnect() {
-          if (this.websocket) {
-            this.websocket.close();
-            this.connected = false;
+              stockDataMap.set(stkCd, tickData);
+              this.renderStockTable();
           }
-        }
+
+          renderStockTable() {
+              stockTable.innerHTML = '';
+              if (stockDataMap.size === 0) {
+                  stockTable.innerHTML = `<tr><td colspan="8" style="color: #888;">등록된 실시간 시세가 없습니다.</td></tr>`;
+                  return;
+              }
+
+              stockDataMap.forEach((data, code) => {
+                  const row = stockTable.insertRow();
+                  const rateNum = parseFloat(data.changeRate);
+                  const colorClass = rateNum > 0 ? 'price-up' : (rateNum < 0 ? 'price-down' : '');
+
+                  row.innerHTML = `
+                      <td><b>${code}</b></td>
+                      <td>${Number(data.currentPrice).toLocaleString()}원</td>
+                      <td class="${colorClass}">${Number(data.priceChange).toLocaleString()}</td>
+                      <td class="${colorClass}">${data.changeRate}%</td>
+                      <td>${Number(data.volume).toLocaleString()}주</td>
+                      <td>${Number(data.open).toLocaleString()}원</td>
+                      <td>${Number(data.high).toLocaleString()}원</td>
+                      <td>${Number(data.low).toLocaleString()}원</td>
+                  `;
+              });
+          }
+
+          sendMessage(message) {
+              if (this.connected && this.websocket) {
+                  this.websocket.send(JSON.stringify(message));
+              }
+          }
+
+          disconnect() {
+              if (this.websocket) this.websocket.close();
+          }
       }
 
-      // 3. 메인 실행 제어 함수
       async function startMonitoring() {
-        const appkey = document.getElementById("appkey").value;
-        const secretkey = document.getElementById("secretkey").value;
+          const appkey = document.getElementById('appkey').value;
+          const secretkey = document.getElementById('secretkey').value;
 
-        if (!appkey || !secretkey) {
-          alert("AppKey와 SecretKey를 입력해주세요.");
-          return;
-        }
+          if (!appkey || !secretkey) {
+              alert('AppKey와 SecretKey를 입력해주세요.');
+              return;
+          }
 
-        try {
-          // 토큰 발급
-          const accessToken = await getAccessToken(appkey, secretkey);
-
-          // 웹소켓 연결 및 실행
-          const wsClient = new BrowserWebSocketClient(SOCKET_URL, accessToken);
-          await wsClient.connect();
-        } catch (error) {
-          appendLog(`실행 중 오류 발생: ${error.message}`);
-        }
+          try {
+              const accessToken = await getAccessToken(appkey, secretkey);
+              const wsClient = new BrowserWebSocketClient(SOCKET_URL, accessToken);
+              await wsClient.connect();
+          } catch (error) {
+              appendLog(`실행 중 오류 발생: ${error.message}`);
+          }
       }
     </script>
   </body>
